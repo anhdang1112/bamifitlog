@@ -1,5 +1,6 @@
-// Bump CACHE when any shipped file changes so installed apps pick up the update.
-const CACHE = 'bamifitness-v3';
+// Run tools/bump_version.py when any shipped file changes so installed apps pick up the update.
+const VERSION = '1.3.0'; // keep in sync via tools/bump_version.py
+const CACHE = `bamifitness-${VERSION}`;
 const ASSETS = [
   './',
   'index.html',
@@ -13,7 +14,12 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache:'reload' skips the browser HTTP cache so a new version never installs stale files
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => Promise.all(ASSETS.map((a) => fetch(a, { cache: 'reload' }).then((r) => { if (!r.ok) throw new Error(a); return c.put(a, r); }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (e) => {
@@ -26,7 +32,9 @@ self.addEventListener('activate', (e) => {
 
 // Cache-first with background refresh: opens instantly and offline, updates on next launch.
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
+  const url = new URL(e.request.url);
+  if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  if (url.pathname.endsWith('/version.json')) return; // always ask the network for the latest version
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then((hit) => {
       const net = fetch(e.request)

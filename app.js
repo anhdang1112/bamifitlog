@@ -1,6 +1,8 @@
 'use strict';
 /* Bami Fitness - single-user workout planner/tracker. Data lives in localStorage on the device. */
 
+const APP_VERSION = '1.3.0'; // keep in sync via tools/bump_version.py
+
 // ---------- helpers ----------
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -389,6 +391,11 @@ function settingsView() {
       <label>Rest timer (sec)<input inputmode="numeric" data-set="restSec" value="${s.restSec}"></label>
     </div>
   </div>
+  <h3>About</h3>
+  <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <div><b>Bami Fitness</b><div class="hint" style="margin:2px 0 0">Version ${APP_VERSION}</div><div class="hint" id="updMsg" style="margin:2px 0 0">${esc(ui.updMsg || '')}</div></div>
+    <button class="ghost" data-act="checkupdate">Check for updates</button>
+  </div>
   <h3>Backup</h3>
   <div class="card">
     <div class="hint" style="margin:0 0 10px">Data is stored only on this phone. Export a backup now and then, especially before clearing browser data or changing phones.</div>
@@ -588,6 +595,8 @@ document.addEventListener('click', (e) => {
     case 'progrange': ui.progRange = v; return render();
     case 'progmetric': ui.progMetric = v; return render();
     // settings
+    case 'checkupdate': setUpdMsg('Checking…'); return checkUpdate(true);
+    case 'applyupdate': return applyUpdate();
     case 'export': return exportData();
     case 'import': return $('#importFile').click();
     case 'reset':
@@ -678,7 +687,37 @@ async function importData(file) {
   } catch { toast('That file is not a valid Bami Fitness backup'); }
 }
 
+// ---------- updates ----------
+function setUpdMsg(msg) { ui.updMsg = msg; const el = $('#updMsg'); if (el) el.textContent = msg; }
+async function fetchLatestVersion() {
+  try { return (await (await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' })).json()).version; } catch { return null; }
+}
+async function checkUpdate(manual) {
+  const latest = await fetchLatestVersion();
+  if (!latest) return manual && setUpdMsg('Could not reach the server - are you offline?');
+  if (latest !== APP_VERSION) {
+    const b = $('#update'); b.textContent = `New version ${latest} available - tap to update`; b.hidden = false;
+    setUpdMsg(`New version ${latest} available`);
+  } else if (manual) setUpdMsg(`You're on the latest version (${APP_VERSION})`);
+}
+/** Fetch the new service worker, wait until it has taken over, then reload. Saved data is not touched. */
+async function applyUpdate() {
+  toast('Updating…');
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) {
+      await reg.update();
+      const w = reg.installing || reg.waiting;
+      if (w && w.state !== 'activated') {
+        await new Promise((res) => { w.addEventListener('statechange', () => w.state === 'activated' && res()); setTimeout(res, 8000); });
+      }
+    }
+  } catch { /* fall through to a plain reload */ }
+  location.reload();
+}
+
 // ---------- boot ----------
 render();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 navigator.storage?.persist?.().catch(() => {});
+setTimeout(() => checkUpdate(false), 1500);
