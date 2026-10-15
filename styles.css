@@ -161,3 +161,5 @@ input[type=date], input[type=time] { min-height: 44px; }
 .cat.ok { color: var(--accent); font-weight: 700; }
 .cat.warn { color: var(--warn); font-weight: 700; }
 .cat.danger { color: var(--danger); font-weight: 700; }
+.update { position: fixed; top: calc(env(safe-area-inset-top) + 8px); left: 12px; right: 12px; max-width: 616px; margin: 0 auto; z-index: 50; background: var(--accent); color: var(--accent-ink); font-weight: 700; padding: 11px 14px; border-radius: 12px; box-shadow: 0 6px 20px #0008; }
+.update[hidden] { display: none; }
