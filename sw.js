@@ -1,5 +1,5 @@
 // Bump CACHE when any shipped file changes so installed apps pick up the update.
-const CACHE = 'fitlog-v1';
+const CACHE = 'bamifitness-v2';
 const ASSETS = [
   './',
   'index.html',

@@ -1,5 +1,5 @@
 'use strict';
-/* FitLog - single-user workout planner/tracker. Data lives in localStorage on the device. */
+/* Bami Fitness - single-user workout planner/tracker. Data lives in localStorage on the device. */
 
 // ---------- helpers ----------
 const $ = (s, el = document) => el.querySelector(s);
@@ -38,7 +38,7 @@ const COMMON_EXERCISES = [
 
 // ---------- storage ----------
 const KEY = 'fitlog.v1';
-const defaults = () => ({ settings: { weightKg: 70, weeklyGoal: 4, restSec: 90 }, plans: [], sessions: [] });
+const defaults = () => ({ settings: { weightKg: 70, heightCm: 170, age: 30, sex: 'male', weeklyGoal: 4, restSec: 90 }, plans: [], sessions: [] });
 function load() {
   try {
     const r = JSON.parse(localStorage.getItem(KEY));
@@ -53,7 +53,13 @@ function save() {
 
 // ---------- domain ----------
 const metFor = (s) => (s.type === 'sport' ? (SPORTS[s.sport] || SPORTS.Other)[0] : STRENGTH_MET);
-const estKcal = (s) => Math.round(metFor(s) * (INTENSITY[s.intensity] || 1) * db.settings.weightKg * (Number(s.durationMin) || 0) / 60);
+/** Basal metabolic rate in kcal/day (Mifflin-St Jeor) from the profile in Settings. */
+const bmr = () => {
+  const p = db.settings;
+  return Math.max(800, 10 * p.weightKg + 6.25 * p.heightCm - 5 * p.age + (p.sex === 'female' ? -161 : 5));
+};
+/** kcal = MET × (BMR per hour) × hours: a MET is a multiple of the resting rate, so a personal BMR beats the one-size 1 kcal/kg/h rule. */
+const estKcal = (s) => Math.round(metFor(s) * (INTENSITY[s.intensity] || 1) * (bmr() / 24) * (Number(s.durationMin) || 0) / 60);
 const sessionIcon = (s) => (s.type === 'sport' ? (SPORTS[s.sport] || SPORTS.Other)[1] : TYPES[s.type].icon);
 const doneSessions = () => db.sessions.filter((s) => s.status === 'done');
 const sessionsOn = (date) => db.sessions.filter((s) => s.date === date).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
@@ -222,7 +228,7 @@ function dashView() {
   const activeDays12w = Object.keys(byDay).filter((k) => k >= ymd(addDays(monNow, -77)) && k <= t).length;
 
   return `
-  <header class="top"><div><h1>Dashboard</h1><div class="sub">Calories are estimated from MET × body weight × time</div></div></header>
+  <header class="top"><div><h1>Dashboard</h1><div class="sub">Calories are estimated from your profile (age, sex, height, weight)</div></div></header>
   <div class="tiles">
     <div class="tile"><div class="v">${fmt(thisW.kcal)} <small>kcal</small></div><div class="l">This week</div></div>
     <div class="tile"><div class="v">${thisW.count}<small> / ${goal}</small></div><div class="l">Workouts this week</div>
@@ -339,9 +345,21 @@ function settingsView() {
   const s = db.settings;
   return `
   <header class="top"><div><h1>Settings</h1></div></header>
+  <h3>Profile</h3>
   <div class="card">
-    <label>Body weight (kg) - used to estimate calories<input inputmode="decimal" data-set="weightKg" value="${s.weightKg}"></label>
+    <div class="row2" style="margin-top:0">
+      <label>Age<input inputmode="numeric" data-set="age" value="${s.age}"></label>
+      <label>Sex<select data-set="sex"><option value="male"${s.sex === 'male' ? ' selected' : ''}>Male</option><option value="female"${s.sex === 'female' ? ' selected' : ''}>Female</option></select></label>
+    </div>
     <div class="row2">
+      <label>Height (cm)<input inputmode="decimal" data-set="heightCm" value="${s.heightCm}"></label>
+      <label>Weight (kg)<input inputmode="decimal" data-set="weightKg" value="${s.weightKg}"></label>
+    </div>
+    <div class="hint">Resting metabolism (BMR): <b>${fmt(bmr())} kcal/day</b>. Used to estimate calories burned in each session.</div>
+  </div>
+  <h3>Training</h3>
+  <div class="card">
+    <div class="row2" style="margin-top:0">
       <label>Weekly workout goal<input inputmode="numeric" data-set="weeklyGoal" value="${s.weeklyGoal}"></label>
       <label>Rest timer (sec)<input inputmode="numeric" data-set="restSec" value="${s.restSec}"></label>
     </div>
@@ -408,7 +426,7 @@ function sessionEditorHTML() {
     <label>Minutes<input inputmode="numeric" data-f="durationMin" value="${d.durationMin}"></label>
     <label>Intensity<select data-f="intensity">${Object.keys(INTENSITY).map((k) => `<option${k === d.intensity ? ' selected' : ''}>${k}</option>`).join('')}</select></label>
     <label>Calories<input id="kcalInput" inputmode="numeric" data-f="kcal" value="${kc}"></label></div>
-  <div class="hint">Auto-estimated (${metFor(d)} MET × ${db.settings.weightKg} kg). Type the number from your watch to replace it ·<a href="#" class="link" style="padding:0" data-act="kcalauto">reset to estimate</a></div>
+  <div class="hint">Auto-estimated (${metFor(d)} MET × your BMR of ${fmt(bmr())} kcal/day). Type the number from your watch to replace it ·<a href="#" class="link" style="padding:0" data-act="kcalauto">reset to estimate</a></div>
   ${exercises}
   <label class="field">Notes<textarea data-f="notes" rows="3" placeholder="How it felt, injuries, equipment…">${esc(d.notes)}</textarea></label>
   ${isNew ? '' : '<button class="danger" data-act="delete">Delete session</button>'}`;
@@ -579,9 +597,10 @@ document.addEventListener('change', (e) => {
   const t = e.target;
   if (t.dataset.act === 'progex') { ui.progEx = t.value; return render(); }
   if (t.dataset.set !== undefined && t.closest('#view')) {
-    const v = Number(t.value);
-    if (!(v > 0)) { toast('Enter a positive number'); return render(); }
-    db.settings[t.dataset.set] = v; save(); return toast('Saved');
+    const key = t.dataset.set;
+    const v = key === 'sex' ? t.value : Number(t.value);
+    if (key !== 'sex' && !(v > 0)) { toast('Enter a positive number'); return render(); }
+    db.settings[key] = v; save(); render(); return toast('Saved');
   }
   if (t.id === 'importFile') return importData(t.files[0]);
   if (!draft || sheetMode !== 'session') return;
@@ -618,7 +637,7 @@ function savePlan() {
 function exportData() {
   const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = `fitlog-backup-${today()}.json`;
+  a.href = URL.createObjectURL(blob); a.download = `bami-fitness-backup-${today()}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
@@ -631,7 +650,7 @@ async function importData(file) {
     if (!confirm(`Replace current data with the backup (${r.sessions.length} sessions, ${r.plans.length} plans)?`)) return;
     db = { ...defaults(), ...r, settings: { ...defaults().settings, ...r.settings } };
     save(); render(); toast('Backup restored');
-  } catch { toast('That file is not a valid FitLog backup'); }
+  } catch { toast('That file is not a valid Bami Fitness backup'); }
 }
 
 // ---------- boot ----------

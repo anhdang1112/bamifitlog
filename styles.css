@@ -33,9 +33,10 @@ button { cursor: pointer; border: 0; background: none; }
 /* bottom nav */
 #nav { position: fixed; left: 0; right: 0; bottom: 0; display: flex; background: #12141ae6; backdrop-filter: blur(10px); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); z-index: 5; }
 #nav button { flex: 1; height: var(--nav-h); font-size: 11px; color: var(--muted); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
-#nav button i { font-style: normal; font-size: 20px; filter: grayscale(1); opacity: .7; }
+#nav button i { display: grid; place-items: center; width: 54px; height: 28px; border-radius: 14px; transition: background .15s; }
+#nav button svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 #nav button.on { color: var(--accent); }
-#nav button.on i { filter: none; opacity: 1; }
+#nav button.on i { background: #3ddc8426; }
 
 /* cards & lists */
 .card { background: var(--card); border-radius: 14px; padding: 14px; }

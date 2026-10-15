@@ -1,4 +1,4 @@
-# FitLog
+# Bami Fitness
 
 Single-user workout planner/tracker PWA. No build step, no dependencies. Data stays in the phone's `localStorage` (use Settings → Export JSON for backups).
 
@@ -14,7 +14,7 @@ Chrome only offers "Install app" over **HTTPS** (localhost is the only exception
 To test on a USB-connected phone without hosting: enable USB debugging, run `adb reverse tcp:8080 tcp:8080`, and open http://localhost:8080 on the phone.
 
 ## Updating
-After changing any file, bump `CACHE` in `sw.js` (e.g. `fitlog-v2`) so installed copies refresh.
+After changing any file, bump `CACHE` in `sw.js` (e.g. `bamifitness-v3`) so installed copies refresh.
 
 ## Regenerate icons
 ```
