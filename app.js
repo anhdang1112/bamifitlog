@@ -58,6 +58,26 @@ const bmr = () => {
   const p = db.settings;
   return Math.max(800, 10 * p.weightKg + 6.25 * p.heightCm - 5 * p.age + (p.sex === 'female' ? -161 : 5));
 };
+/**
+ * BMI = kg / m². Category uses the WHO Asia-Pacific cut-offs (23 / 25), which fit Vietnamese adults better than 25 / 30.
+ * BMI itself ignores age and sex, so they feed the body-fat estimate (Deurenberg 1991) that sits next to it.
+ */
+function bodyStats() {
+  const p = db.settings, m = p.heightCm / 100, bmi = p.weightKg / (m * m);
+  const adult = p.age >= 18;
+  const cat = bmi < 18.5 ? ['Underweight', 'warn'] : bmi < 23 ? ['Normal', 'ok'] : bmi < 25 ? ['Overweight', 'warn'] : ['Obese', 'danger'];
+  const bf = 1.2 * bmi + 0.23 * p.age - 10.8 * (p.sex === 'male' ? 1 : 0) - 5.4;
+  return { bmi, adult, cat, bf: Math.max(3, bf), lo: 18.5 * m * m, hi: 22.9 * m * m };
+}
+function bodyCard() {
+  const b = bodyStats(), r1 = (v) => (Math.round(v * 10) / 10).toFixed(1);
+  return `<div class="tiles">
+    <div class="tile"><div class="v">${r1(b.bmi)}</div><div class="l">BMI · ${b.adult ? `<span class="cat ${b.cat[1]}">${b.cat[0]}</span>` : 'adults 18+ only'}</div></div>
+    <div class="tile"><div class="v">${b.adult ? r1(b.bf) : '–'}<small>${b.adult ? ' %' : ''}</small></div><div class="l">Est. body fat</div></div>
+  </div>
+  <div class="hint">${b.adult ? `Healthy weight for ${db.settings.heightCm} cm: ${r1(b.lo)}–${r1(b.hi)} kg (Asia-Pacific range). ` : 'For under 18, compare against BMI-for-age charts instead. '}Body fat is a rough estimate from BMI, age and sex; BMI does not tell muscle from fat.</div>`;
+}
+
 /** kcal = MET × (BMR per hour) × hours: a MET is a multiple of the resting rate, so a personal BMR beats the one-size 1 kcal/kg/h rule. */
 const estKcal = (s) => Math.round(metFor(s) * (INTENSITY[s.intensity] || 1) * (bmr() / 24) * (Number(s.durationMin) || 0) / 60);
 const sessionIcon = (s) => (s.type === 'sport' ? (SPORTS[s.sport] || SPORTS.Other)[1] : TYPES[s.type].icon);
@@ -237,6 +257,9 @@ function dashView() {
     <div class="tile"><div class="v">${streak}<small> wk</small></div><div class="l">Goal streak</div></div>
   </div>
 
+  <h3>Body</h3>
+  ${bodyCard()}
+
   <h3>Calories burned</h3>
   <div class="seg accent" style="margin-bottom:10px">
     <button class="${mode === 'week' ? 'on' : ''}" data-act="dashmode" data-v="week">Weekly</button>
@@ -355,8 +378,10 @@ function settingsView() {
       <label>Height (cm)<input inputmode="decimal" data-set="heightCm" value="${s.heightCm}"></label>
       <label>Weight (kg)<input inputmode="decimal" data-set="weightKg" value="${s.weightKg}"></label>
     </div>
-    <div class="hint">Resting metabolism (BMR): <b>${fmt(bmr())} kcal/day</b>. Used to estimate calories burned in each session.</div>
   </div>
+  <h3>Body</h3>
+  ${bodyCard()}
+  <div class="hint">Resting metabolism (BMR): <b>${fmt(bmr())} kcal/day</b>. Used to estimate calories burned in each session.</div>
   <h3>Training</h3>
   <div class="card">
     <div class="row2" style="margin-top:0">
