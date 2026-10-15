@@ -1,6 +1,6 @@
 {
-  "name": "FitLog - Workout Planner & Tracker",
-  "short_name": "FitLog",
+  "name": "Bami Fitness",
+  "short_name": "Bami Fitness",
   "description": "Plan workouts, log sets and track calories and strength progress.",
   "start_url": "./",
   "scope": "./",
