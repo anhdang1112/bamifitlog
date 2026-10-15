@@ -3,7 +3,7 @@ from PIL import Image, ImageDraw
 import os
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "icons")
-BG, FG = (15, 17, 21), (61, 220, 132)
+BG, FG = (10, 10, 12), (200, 255, 46)
 
 
 def draw(size, maskable):
