@@ -1,7 +1,7 @@
 'use strict';
 /* Bami Fitness - single-user workout planner/tracker. Data lives in localStorage on the device. */
 
-const APP_VERSION = '2.1.0'; // keep in sync via tools/bump_version.py
+const APP_VERSION = '2.2.0'; // keep in sync via tools/bump_version.py
 
 // ---------- helpers ----------
 const $ = (s, el = document) => el.querySelector(s);
@@ -89,7 +89,6 @@ function bodyCard() {
 
 /** kcal = MET × (BMR per hour) × hours: a MET is a multiple of the resting rate, so a personal BMR beats the one-size 1 kcal/kg/h rule. */
 const estKcal = (s) => Math.round(metFor(s) * (INTENSITY[s.intensity] || 1) * (bmr() / 24) * (Number(s.durationMin) || 0) / 60);
-const sessionIcon = (s) => (s.type === 'sport' ? (SPORTS[s.sport] || SPORTS.Other)[1] : TYPES[s.type].icon);
 const doneSessions = () => db.sessions.filter((s) => s.status === 'done');
 const sessionsOn = (date) => db.sessions.filter((s) => s.date === date).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 const setCount = (s) => s.exercises.reduce((n, e) => n + e.sets.length, 0);
@@ -193,19 +192,45 @@ function render() {
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('on', b.dataset.view === ui.view));
 }
 
+const tagOf = (s) => sessionTag(s, exInfo);
+const planTag = (p) => sessionTag({ type: 'plan', name: p.name, tag: p.tag, exercises: p.exercises }, exInfo);
+const tagBadge = (tag, status) => `<span class="cico ${status === 'done' ? 'done' : 'plan'}" style="--c:${TAGS[tag].color}" title="${esc(tag)}">${tagSvg(tag)}</span>`;
+
+function calendarHTML() {
+  const sel = parseYmd(ui.sel), y = sel.getFullYear(), m = sel.getMonth(), t = today();
+  const start = mondayOf(new Date(y, m, 1)), end = addDays(mondayOf(new Date(y, m + 1, 0)), 6);
+  const monthKey = `${y}-${pad(m + 1)}`;
+  const used = new Map();
+  let cells = '';
+  for (let d = start; d <= end; d = addDays(d, 1)) {
+    const key = ymd(d), ss = sessionsOn(key);
+    ss.forEach((x) => { if (key.startsWith(monthKey)) used.set(tagOf(x), true); });
+    const icons = ss.slice(0, 2).map((x) => tagBadge(tagOf(x), x.status)).join('') + (ss.length > 2 ? `<span class="more">+${ss.length - 2}</span>` : '');
+    cells += `<button class="cell${key.startsWith(monthKey) ? '' : ' out'}${key === t ? ' today' : ''}${key === ui.sel ? ' sel' : ''}" data-act="sel" data-d="${key}" aria-label="${key}">
+      <span class="cn">${d.getDate()}</span><span class="cicos">${icons}</span></button>`;
+  }
+  const legend = [...used.keys()].map((tag) => `<span class="lg" style="--c:${TAGS[tag].color}">${tagSvg(tag)}${esc(tag)}</span>`).join('');
+  return `<div class="cal-head">${DAY.map((d) => `<span>${d}</span>`).join('')}</div><div class="cal">${cells}</div>
+    <div class="legend2">${legend}<span class="lg2"><i class="cico done" style="--c:#8d8d9a"></i>done <i class="cico plan" style="--c:#8d8d9a"></i>planned</span></div>`;
+}
+
+/** One-tap row for the selected day: pick a plan (or a sport) and it lands on the calendar with its icon. */
+function quickPlanRow() {
+  const chip = (act, attr, tag, label) => `<button class="qchip" data-act="${act}" ${attr} style="--c:${TAGS[tag].color}"><i>${tagSvg(tag)}</i>${esc(label)}</button>`;
+  return `<div class="chips scroll quick">
+    ${db.plans.map((p) => chip('quickplan', `data-id="${p.id}"`, planTag(p), p.name)).join('')}
+    ${chip('quickpreset', 'data-v="pickleball"', 'Pickleball', 'Pickleball')}
+    ${chip('quickpreset', 'data-v="cardio"', 'Cardio', 'Cardio')}
+    ${chip('quickpreset', 'data-v="free"', 'Workout', 'Free style')}
+  </div>${db.plans.length ? '' : '<div class="hint">Create plans (Push, Pull, Legs…) in the Plans tab and they show up here.</div>'}`;
+}
+
 function homeView() {
   const selD = parseYmd(ui.sel);
-  const mon = mondayOf(selD);
   const t = today();
-  const weekKeys = Array.from({ length: 7 }, (_, i) => ymd(addDays(mon, i)));
+  const weekKeys = Array.from({ length: 7 }, (_, i) => ymd(addDays(mondayOf(selD), i)));
   const weekDone = doneSessions().filter((s) => weekKeys.includes(s.date));
   const weekKcal = weekDone.reduce((n, s) => n + (s.kcal || 0), 0);
-  const days = weekKeys.map((k, i) => {
-    const ss = sessionsOn(k);
-    const dots = ss.slice(0, 3).map((s) => `<span class="dot ${s.status === 'done' ? 'done' : 'plan'}"></span>`).join('');
-    return `<button class="day${k === ui.sel ? ' sel' : ''}${k === t ? ' today' : ''}" data-act="sel" data-d="${k}">
-      <span class="dn">${DAY[i]}</span><span class="dd">${parseYmd(k).getDate()}</span><span class="dots">${dots}</span></button>`;
-  }).join('');
   const list = sessionsOn(ui.sel);
   const heading = ui.sel === t ? 'Today' : `${DAY[(selD.getDay() + 6) % 7]}, ${selD.getDate()} ${MONTH[selD.getMonth()]}`;
   return `
@@ -213,15 +238,17 @@ function homeView() {
     <div><div class="brand">Bami Fitness</div><h1>${MONTH[selD.getMonth()]} ${selD.getFullYear()}</h1>
       <div class="sub">${weekDone.length}/${db.settings.weeklyGoal} workouts · ${fmt(weekKcal)} kcal this week</div></div>
     <div class="weeknav">
-      <button class="icon-btn" data-act="shift" data-n="-7" aria-label="Previous week">‹</button>
+      <button class="icon-btn" data-act="monthshift" data-n="-1" aria-label="Previous month">‹</button>
       <button class="icon-btn" data-act="sel" data-d="${t}" aria-label="Today">●</button>
-      <button class="icon-btn" data-act="shift" data-n="7" aria-label="Next week">›</button>
+      <button class="icon-btn" data-act="monthshift" data-n="1" aria-label="Next month">›</button>
     </div>
   </header>
-  <div class="week">${days}</div>
+  ${calendarHTML()}
   ${weekCheckCard(weekKeys)}
   <h3>${heading}</h3>
-  <div class="list">${list.length ? list.map(sessionCard).join('') : '<div class="empty">Nothing here yet.<br>Tap + to plan or log a session.</div>'}</div>
+  <div class="list">${list.length ? list.map(sessionCard).join('') : '<div class="empty" style="padding:18px">Nothing planned for this day.</div>'}</div>
+  <h3>Plan this day</h3>
+  ${quickPlanRow()}
   <button class="fab" data-act="add" aria-label="Add session">+</button>`;
 }
 
@@ -245,7 +272,7 @@ function sessionCard(s) {
     ? '<span class="pill done">Done</span>'
     : `<button class="check" data-act="quickdone" data-id="${s.id}" aria-label="Mark done">✓</button>`;
   return `<div class="session ${s.status}" data-act="edit" data-id="${s.id}" role="button" tabindex="0">
-    <div class="ico">${sessionIcon(s)}</div>
+    <div class="ico" style="--c:${TAGS[tagOf(s)].color}">${tagSvg(tagOf(s))}</div>
     <div class="meta"><div class="name">${esc(s.name)}</div><div class="info">${esc(bits.join(' · '))}${hr}</div></div>${right}</div>`;
 }
 
@@ -255,7 +282,7 @@ function plansView() {
     return `
     <div class="card">
       <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
-        <div><h2>${esc(p.name)}</h2><div class="hint" style="margin-top:2px">${p.exercises.length} exercises · ${sets} sets</div></div>
+        <div><h2 class="hname">${tagBadge(planTag(p), 'done')}${esc(p.name)}</h2><div class="hint" style="margin-top:2px">${p.exercises.length} exercises · ${sets} sets</div></div>
         <div style="display:flex;gap:6px"><button class="ghost" data-act="plan-edit" data-id="${p.id}">Edit</button>
         <button class="primary sm" data-act="plan-use" data-id="${p.id}">Schedule</button></div>
       </div>
@@ -551,7 +578,7 @@ function settingsView() {
 function newDraft(date, plan) {
   const d = {
     id: uid(), date, time: '18:00', type: 'plan', name: '', planId: '', sport: 'Pickleball',
-    durationMin: 60, intensity: 'Moderate', kcal: 0, kcalManual: false, notes: '',
+    durationMin: 60, intensity: 'Moderate', kcal: 0, kcalManual: false, notes: '', tag: '',
     avgHr: '', maxHr: '', minHr: '',
     status: date < today() ? 'done' : 'planned', exercises: [],
   };
@@ -559,7 +586,7 @@ function newDraft(date, plan) {
   return d;
 }
 function applyPlan(d, plan) {
-  d.type = 'plan'; d.planId = plan.id; d.name = plan.name;
+  d.type = 'plan'; d.planId = plan.id; d.name = plan.name; d.tag = plan.tag || '';
   d.exercises = plan.exercises.map((e) => ({
     name: e.name, sets: e.sets.map((x) => ({ reps: x.reps ?? '', weight: x.weight ?? '', done: false })),
   }));
@@ -624,6 +651,7 @@ function sessionEditorHTML() {
   <div class="sheet-top"><button class="link" data-act="close">Cancel</button><h2>${isNew ? 'New session' : 'Edit session'}</h2><button class="primary sm" data-act="save">Save</button></div>
   <div class="seg">${Object.entries(TYPES).map(([k, t]) => `<button class="${d.type === k ? 'on' : ''}" data-act="type" data-v="${k}">${t.icon} ${t.label}</button>`).join('')}</div>
   ${typeFields}
+  <label class="field">Calendar icon<select data-f="tag"><option value="">Auto · ${esc(sessionTag({ ...d, tag: '' }, exInfo))}</option>${PICK_TAGS.map((k) => `<option${k === d.tag ? ' selected' : ''}>${k}</option>`).join('')}</select></label>
   <div class="row2"><label>Date<input type="date" data-f="date" value="${d.date}"></label><label>Time<input type="time" data-f="time" value="${d.time || ''}"></label></div>
   <div class="seg accent" style="margin-top:12px">
     <button class="${d.status === 'planned' ? 'on' : ''}" data-act="status" data-v="planned">Planned</button>
@@ -681,6 +709,7 @@ function planEditorHTML() {
   return `
   <div class="sheet-top"><button class="link" data-act="close">Cancel</button><h2>${isNew ? 'New plan' : 'Edit plan'}</h2><button class="primary sm" data-act="plan-save">Save</button></div>
   <label>Plan name<input data-f="name" value="${esc(p.name)}" placeholder="e.g. Push Day"></label>
+  <label class="field">Calendar icon<select data-f="tag"><option value="">Auto · ${esc(sessionTag({ type: 'plan', name: p.name, exercises: p.exercises }, exInfo))}</option>${PICK_TAGS.map((k) => `<option${k === p.tag ? ' selected' : ''}>${k}</option>`).join('')}</select></label>
   ${p.exercises.map((e, i) => exerciseBlock(e, i, 'plan')).join('')}
   <button class="addex" data-act="addex">+ Add exercises</button>
   <h3>Analysis</h3>
@@ -774,7 +803,18 @@ document.addEventListener('click', (e) => {
   switch (a) {
     // schedule
     case 'sel': ui.sel = el.dataset.d; return render();
-    case 'shift': ui.sel = ymd(addDays(parseYmd(ui.sel), Number(el.dataset.n))); return render();
+    case 'monthshift': {
+      const cur = parseYmd(ui.sel), to = new Date(cur.getFullYear(), cur.getMonth() + Number(el.dataset.n), 1), now = new Date();
+      ui.sel = to.getFullYear() === now.getFullYear() && to.getMonth() === now.getMonth() ? today() : ymd(to);
+      return render();
+    }
+    case 'quickplan': return quickSchedule((d) => applyPlan(d, db.plans.find((p) => p.id === id)));
+    case 'quickpreset':
+      return quickSchedule((d) => {
+        if (v === 'pickleball') Object.assign(d, { type: 'sport', sport: 'Pickleball', name: 'Pickleball', durationMin: 90 });
+        else if (v === 'cardio') Object.assign(d, { type: 'sport', sport: 'Running', name: 'Cardio', durationMin: 45, tag: 'Cardio' });
+        else { d.type = 'free'; d.openEditor = true; }
+      });
     case 'add': draft = newDraft(ui.sel); isNew = true; return openSheet('session');
     case 'edit': draft = structuredClone(db.sessions.find((s) => s.id === id)); isNew = false; return openSheet('session');
     case 'quickdone': {
@@ -913,6 +953,18 @@ document.addEventListener('change', (e) => {
 function syncKcal() {
   if (draft.kcalManual) return;
   const k = $('#kcalInput'); if (k) k.value = estKcal(draft);
+}
+
+/** Put a session on the selected day in one tap. Past days and free style open the editor instead, to log what happened. */
+function quickSchedule(make) {
+  const d = newDraft(ui.sel);
+  make(d);
+  const edit = d.openEditor || ui.sel < today();
+  delete d.openEditor;
+  if (edit) { draft = d; isNew = true; return openSheet('session'); }
+  d.status = 'planned'; d.kcal = estKcal(d);
+  db.sessions.push(d); save(); render();
+  toast(`Scheduled ${d.name} - tap it to edit`);
 }
 
 function savePlan() {
