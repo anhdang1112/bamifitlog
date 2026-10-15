@@ -1,7 +1,7 @@
 'use strict';
 /* Bami Fitness - single-user workout planner/tracker. Data lives in localStorage on the device. */
 
-const APP_VERSION = '2.2.0'; // keep in sync via tools/bump_version.py
+const APP_VERSION = '2.3.0'; // keep in sync via tools/bump_version.py
 
 // ---------- helpers ----------
 const $ = (s, el = document) => el.querySelector(s);
@@ -21,7 +21,7 @@ const today = () => ymd(new Date());
 
 // ---------- constants ----------
 const TYPES = {
-  plan: { label: 'Plan', icon: '📋' },
+  plan: { label: 'Routine', icon: '📋' },
   free: { label: 'Free style', icon: '🏋️' },
   sport: { label: 'Sport', icon: '🏅' },
 };
@@ -163,7 +163,7 @@ function analysisHTML(a) {
     <div class="tile"><div class="v">${t.sets}</div><div class="l">Sets · ${t.exercises} exercises</div></div>
     <div class="tile"><div class="v">${fmt(t.volume)}</div><div class="l">Volume (kg)</div></div>
     <div class="tile"><div class="v">~${t.estMin}<small> min</small></div><div class="l">Est. duration</div></div></div>` : '';
-  const rows = a.rows.length ? `<div class="card mtable"><div class="hint" style="margin:0 0 8px">Sets per muscle in this ${sheetMode === 'plan' ? 'plan' : 'session'} (3-10 is the sweet spot)</div>${a.rows.map((r) => `
+  const rows = a.rows.length ? `<div class="card mtable"><div class="hint" style="margin:0 0 8px">Sets per muscle in this ${sheetMode === 'plan' ? 'routine' : 'session'} (3-10 is the sweet spot)</div>${a.rows.map((r) => `
     <div class="mrow"><span class="mn">${esc(r.muscle)}</span>
       <span class="mbar"><i class="${r.status}" style="width:${Math.min(100, r.sets / 12 * 100)}%"></i></span>
       <span class="mv">${r.sets}${r.week != null ? `<small> · week ${r.week}/${r.min}-${r.max}</small>` : ''}</span></div>`).join('')}</div>` : '';
@@ -222,7 +222,7 @@ function quickPlanRow() {
     ${chip('quickpreset', 'data-v="pickleball"', 'Pickleball', 'Pickleball')}
     ${chip('quickpreset', 'data-v="cardio"', 'Cardio', 'Cardio')}
     ${chip('quickpreset', 'data-v="free"', 'Workout', 'Free style')}
-  </div>${db.plans.length ? '' : '<div class="hint">Create plans (Push, Pull, Legs…) in the Plans tab and they show up here.</div>'}`;
+  </div>${db.plans.length ? '' : '<div class="hint">Create routines (Push, Pull, Legs…) in the Routines tab and they show up here.</div>'}`;
 }
 
 function homeView() {
@@ -247,7 +247,7 @@ function homeView() {
   ${weekCheckCard(weekKeys)}
   <h3>${heading}</h3>
   <div class="list">${list.length ? list.map(sessionCard).join('') : '<div class="empty" style="padding:18px">Nothing planned for this day.</div>'}</div>
-  <h3>Plan this day</h3>
+  <h3>Add a routine to this day</h3>
   ${quickPlanRow()}
   <button class="fab" data-act="add" aria-label="Add session">+</button>`;
 }
@@ -290,9 +290,9 @@ function plansView() {
     </div>`;
   }).join('');
   return `
-  <header class="top"><div><div class="brand">Bami Fitness</div><h1>Plans</h1><div class="sub">Reusable named workouts</div></div>
-    <button class="primary sm" data-act="plan-new">+ New plan</button></header>
-  <div class="list">${cards || '<div class="empty">No plans yet.<br>Create one like "Push Day" or "Leg Day", pick exercises from the library, then schedule it on any date.</div>'}</div>`;
+  <header class="top"><div><div class="brand">Bami Fitness</div><h1>Routines</h1><div class="sub">Reusable workouts: Push, Pull, Legs…</div></div>
+    <button class="primary sm" data-act="plan-new">+ New routine</button></header>
+  <div class="list">${cards || '<div class="empty">No routines yet.<br>Create one like "Push" or "Legs" and pick its exercises from the library.<br>Then on the Schedule tab just choose a date and a routine.</div>'}</div>`;
 }
 
 // --- dashboard ---
@@ -568,7 +568,7 @@ function settingsView() {
   <div class="card">
     <div class="hint" style="margin:0 0 10px">Data is stored only on this phone. Export a backup now and then, especially before clearing browser data or changing phones.</div>
     <div style="display:flex;gap:8px"><button class="primary" data-act="export">Export JSON</button><button class="ghost" data-act="import">Import…</button></div>
-    <div class="hint">${db.sessions.length} sessions · ${db.plans.length} plans</div>
+    <div class="hint">${db.sessions.length} sessions · ${db.plans.length} routines</div>
   </div>
   <h3>Danger zone</h3>
   <button class="danger" style="margin-top:0" data-act="reset">Erase all data</button>`;
@@ -590,6 +590,8 @@ function applyPlan(d, plan) {
   d.exercises = plan.exercises.map((e) => ({
     name: e.name, sets: e.sets.map((x) => ({ reps: x.reps ?? '', weight: x.weight ?? '', done: false })),
   }));
+  const n = d.exercises.reduce((t, e) => t + e.sets.length, 0);
+  if (n) d.durationMin = Math.max(20, Math.round((n * (0.75 + db.settings.restSec / 60) + 5) / 5) * 5);
 }
 const blankSets = (name, excludeId) => {
   const prev = lastSets(name, excludeId);
@@ -637,7 +639,7 @@ function sessionEditorHTML() {
   const d = draft;
   const kc = d.kcalManual ? d.kcal : estKcal(d);
   const typeFields = d.type === 'plan'
-    ? `<label class="field">Plan<select data-f="planId"><option value="">Custom name…</option>${db.plans.map((p) => `<option value="${p.id}"${p.id === d.planId ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
+    ? `<label class="field">Routine<select data-f="planId"><option value="">Custom name…</option>${db.plans.map((p) => `<option value="${p.id}"${p.id === d.planId ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
        <label class="field">Name<input data-f="name" value="${esc(d.name)}" placeholder="e.g. Push Day"></label>`
     : d.type === 'free'
       ? `<label class="field">Name<input data-f="name" value="${esc(d.name)}" placeholder="Free style"></label>`
@@ -671,6 +673,7 @@ function sessionEditorHTML() {
     <label>Max<input inputmode="numeric" data-f="maxHr" value="${esc(d.maxHr)}" placeholder="e.g. 165"></label>
     <label>Min<input inputmode="numeric" data-f="minHr" value="${esc(d.minHr)}" placeholder="e.g. 78"></label></div>
   <label class="field">Notes<textarea data-f="notes" rows="3" placeholder="How it felt, injuries, equipment…">${esc(d.notes)}</textarea></label>
+  ${d.status === 'planned' && d.date <= today() ? '<button class="primary finish" data-act="finish">✓ Finish workout</button>' : ''}
   ${isNew ? '' : '<button class="danger" data-act="delete">Delete session</button>'}`;
 }
 
@@ -707,14 +710,14 @@ function saveSession() {
 function planEditorHTML() {
   const p = draft;
   return `
-  <div class="sheet-top"><button class="link" data-act="close">Cancel</button><h2>${isNew ? 'New plan' : 'Edit plan'}</h2><button class="primary sm" data-act="plan-save">Save</button></div>
-  <label>Plan name<input data-f="name" value="${esc(p.name)}" placeholder="e.g. Push Day"></label>
+  <div class="sheet-top"><button class="link" data-act="close">Cancel</button><h2>${isNew ? 'New routine' : 'Edit routine'}</h2><button class="primary sm" data-act="plan-save">Save</button></div>
+  <label>Routine name<input data-f="name" value="${esc(p.name)}" placeholder="e.g. Push Day"></label>
   <label class="field">Calendar icon<select data-f="tag"><option value="">Auto · ${esc(sessionTag({ type: 'plan', name: p.name, exercises: p.exercises }, exInfo))}</option>${PICK_TAGS.map((k) => `<option${k === p.tag ? ' selected' : ''}>${k}</option>`).join('')}</select></label>
   ${p.exercises.map((e, i) => exerciseBlock(e, i, 'plan')).join('')}
   <button class="addex" data-act="addex">+ Add exercises</button>
   <h3>Analysis</h3>
   <div id="ana">${analysisHTML(draftAnalysis())}</div>
-  ${isNew ? '' : '<button class="danger" data-act="plan-delete">Delete plan</button>'}`;
+  ${isNew ? '' : '<button class="danger" data-act="plan-delete">Delete routine</button>'}`;
 }
 
 // ---------- exercise picker ----------
@@ -829,11 +832,12 @@ document.addEventListener('click', (e) => {
     case 'plan-use': draft = newDraft(ui.sel, db.plans.find((p) => p.id === id)); isNew = true; return openSheet('session');
     case 'plan-save': return savePlan();
     case 'plan-delete':
-      if (confirm('Delete this plan? Past sessions are kept.')) { db.plans = db.plans.filter((p) => p.id !== draft.id); save(); closeSheet(); render(); }
+      if (confirm('Delete this routine? Past sessions are kept.')) { db.plans = db.plans.filter((p) => p.id !== draft.id); save(); closeSheet(); render(); }
       return;
     // sheet (shared by session and plan editors)
     case 'close': return closeSheet();
     case 'save': return saveSession();
+    case 'finish': draft.status = 'done'; return saveSession();
     case 'delete':
       if (confirm('Delete this session?')) { db.sessions = db.sessions.filter((s) => s.id !== draft.id); save(); closeSheet(); render(); }
       return;
@@ -902,7 +906,7 @@ document.addEventListener('click', (e) => {
     case 'export': return exportData();
     case 'import': return $('#importFile').click();
     case 'reset':
-      if (confirm('Erase ALL sessions, plans and settings from this device? Export a backup first.')) { db = defaults(); save(); render(); toast('All data erased'); }
+      if (confirm('Erase ALL sessions, routines and settings from this device? Export a backup first.')) { db = defaults(); save(); render(); toast('All data erased'); }
       return;
   }
 });
@@ -941,7 +945,9 @@ document.addEventListener('change', (e) => {
     const plan = db.plans.find((p) => p.id === t.value);
     draft.planId = t.value;
     if (plan) {
-      if (!draft.exercises.length || confirm('Replace the current exercises with this plan?')) applyPlan(draft, plan);
+      // only ask when real numbers would be lost; reps copied from the previous routine do not count
+      const entered = draft.exercises.some((e) => e.sets.some((x) => x.done || x.weight !== ''));
+      if (!entered || confirm('Switch to this routine? It replaces the exercises and numbers entered in this session.')) applyPlan(draft, plan);
       else draft.name = plan.name;
     }
     return renderSheet();
@@ -970,7 +976,7 @@ function quickSchedule(make) {
 function savePlan() {
   const p = structuredClone(draft);
   p.name = (p.name || '').trim();
-  if (!p.name) return toast('Give the plan a name');
+  if (!p.name) return toast('Give the routine a name');
   p.exercises = p.exercises
     .map((e) => ({ name: e.name, sets: e.sets.filter((x) => x.reps !== '' || x.weight !== '').map((x) => ({ reps: num(x.reps), weight: num(x.weight) })) }))
     .filter((e) => e.sets.length);
@@ -993,7 +999,7 @@ async function importData(file) {
   try {
     const r = JSON.parse(await file.text());
     if (!Array.isArray(r.sessions) || !Array.isArray(r.plans)) throw new Error('bad shape');
-    if (!confirm(`Replace current data with the backup (${r.sessions.length} sessions, ${r.plans.length} plans)?`)) return;
+    if (!confirm(`Replace current data with the backup (${r.sessions.length} sessions, ${r.plans.length} routines)?`)) return;
     db = migrate({ ...defaults(), ...r, settings: { ...defaults().settings, ...r.settings } });
     save(); render(); toast('Backup restored');
   } catch { toast('That file is not a valid Bami Fitness backup'); }

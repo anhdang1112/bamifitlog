@@ -1,5 +1,5 @@
 // Run tools/bump_version.py when any shipped file changes so installed apps pick up the update.
-const VERSION = '2.2.0'; // keep in sync via tools/bump_version.py
+const VERSION = '2.3.0'; // keep in sync via tools/bump_version.py
 const CACHE = `bamifitness-${VERSION}`;
 const ASSETS = [
   './',
