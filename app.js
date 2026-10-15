@@ -1,7 +1,7 @@
 'use strict';
 /* Bami Fitness - single-user workout planner/tracker. Data lives in localStorage on the device. */
 
-const APP_VERSION = '2.3.0'; // keep in sync via tools/bump_version.py
+const APP_VERSION = '2.4.0'; // keep in sync via tools/bump_version.py
 
 // ---------- helpers ----------
 const $ = (s, el = document) => el.querySelector(s);
@@ -123,6 +123,7 @@ const goalKey = () => (GOALS[db.settings.goal] ? db.settings.goal : 'general');
 function suggestExercises(muscle, n, exclude) {
   const used = new Map();
   for (const s of doneSessions()) for (const e of s.exercises) used.set(e.name.toLowerCase(), (used.get(e.name.toLowerCase()) || 0) + 1);
+  for (const p of db.plans) for (const e of p.exercises) used.set(e.name.toLowerCase(), (used.get(e.name.toLowerCase()) || 0) + 0.5);
   return library().filter((x) => x.muscle === muscle && !exclude.some((y) => sameName(y, x.name)))
     .map((x, i) => ({ x, i, n: used.get(x.name.toLowerCase()) || 0 }))
     .sort((a, b) => b.n - a.n || a.i - b.i).slice(0, n).map((o) => o.x.name);
@@ -292,7 +293,9 @@ function plansView() {
   return `
   <header class="top"><div><div class="brand">Bami Fitness</div><h1>Routines</h1><div class="sub">Reusable workouts: Push, Pull, Legs…</div></div>
     <button class="primary sm" data-act="plan-new">+ New routine</button></header>
-  <div class="list">${cards || '<div class="empty">No routines yet.<br>Create one like "Push" or "Legs" and pick its exercises from the library.<br>Then on the Schedule tab just choose a date and a routine.</div>'}</div>`;
+  <div class="list">${cards || '<div class="empty">No routines yet.<br>Create one like "Push" or "Legs" and pick its exercises from the library.<br>Then on the Schedule tab just choose a date and a routine.</div>'}</div>
+  <button class="ghost" data-act="starter" style="width:100%;margin-top:14px">+ Add starter routines (Push, Pull, Legs, Upper, Lower)</button>
+  <div class="hint">Built for a small gym: dumbbells, barbell + rack, pull-up/cable station, lat pulldown, leg press, leg extension/curl, back extension. Edit them freely; ones you already have are skipped.</div>`;
 }
 
 // --- dashboard ---
@@ -810,6 +813,16 @@ document.addEventListener('click', (e) => {
       const cur = parseYmd(ui.sel), to = new Date(cur.getFullYear(), cur.getMonth() + Number(el.dataset.n), 1), now = new Date();
       ui.sel = to.getFullYear() === now.getFullYear() && to.getMonth() === now.getMonth() ? today() : ymd(to);
       return render();
+    }
+    case 'starter': {
+      let added = 0;
+      for (const r of STARTER_ROUTINES) {
+        if (db.plans.some((p) => sameName(p.name, r.name))) continue;
+        db.plans.push({ id: uid(), name: r.name, exercises: r.ex.map(([name, k, reps]) => ({ name, sets: Array.from({ length: k }, () => ({ reps, weight: '' })) })) });
+        added++;
+      }
+      save(); render();
+      return toast(added ? `Added ${added} starter routine${added > 1 ? 's' : ''}` : 'Starter routines are already there');
     }
     case 'quickplan': return quickSchedule((d) => applyPlan(d, db.plans.find((p) => p.id === id)));
     case 'quickpreset':
