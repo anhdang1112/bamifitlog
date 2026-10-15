@@ -1,7 +1,7 @@
 'use strict';
 /* Bami Fitness - single-user workout planner/tracker. Data lives in localStorage on the device. */
 
-const APP_VERSION = '2.4.0'; // keep in sync via tools/bump_version.py
+const APP_VERSION = '2.5.0'; // keep in sync via tools/bump_version.py
 
 // ---------- helpers ----------
 const $ = (s, el = document) => el.querySelector(s);
