@@ -48,6 +48,7 @@ const LIBRARY = {
   Calves: [
     ['Standing Calf Raise', 'Machine'], ['Seated Calf Raise', 'Machine'], ['Donkey Calf Raise', 'Machine'],
     ['Bodyweight Calf Raise', 'Bodyweight'],
+    ['Leg Press Calf Raise', 'Machine'],
   ],
   Core: [
     ['Plank', 'Bodyweight'], ['Side Plank', 'Bodyweight'], ['Crunch', 'Bodyweight'], ['Sit-up', 'Bodyweight'],
@@ -64,8 +65,22 @@ const LIBRARY = {
   ],
   Cardio: [
     ['Treadmill Run', 'Machine'], ['Stationary Bike', 'Machine'], ['Assault Bike', 'Machine'], ['Rowing Machine', 'Machine'],
+    ['Treadmill Walk', 'Machine'], ['Incline Treadmill Walk', 'Machine'],
     ['Elliptical', 'Machine'], ['Stair Climber', 'Machine'], ['Jump Rope', 'Other'],
   ],
 };
 
 const LIBRARY_FLAT = Object.entries(LIBRARY).flatMap(([muscle, list]) => list.map(([name, equip]) => ({ name, muscle, equip })));
+
+/*
+ * Starter routines, built for a small private gym: dumbbells, a barbell + rack, a pull-up/dip + cable station,
+ * lat pulldown, leg press, a leg extension / lying leg curl machine, a back-extension bench and a treadmill.
+ * Each is [exercise, sets, reps]. Together they make a balanced 5-day week (checked in tests/starter.test.js).
+ */
+const STARTER_ROUTINES = [
+  { name: 'Push', ex: [['Dumbbell Bench Press', 4, 8], ['Overhead Press', 3, 8], ['Incline Dumbbell Press', 3, 10], ['Lateral Raise', 3, 15], ['Triceps Pushdown', 3, 12], ['Overhead Triceps Extension', 3, 12]] },
+  { name: 'Pull', ex: [['Pull-up', 3, 6], ['Barbell Row', 3, 8], ['Lat Pulldown', 3, 10], ['Face Pull', 2, 15], ['Barbell Curl', 3, 10], ['Hammer Curl', 3, 12]] },
+  { name: 'Legs', ex: [['Squat', 4, 8], ['Leg Press', 3, 10], ['Romanian Deadlift', 3, 8], ['Lying Leg Curl', 3, 12], ['Hip Thrust', 4, 10], ['Leg Press Calf Raise', 4, 12]] },
+  { name: 'Upper', ex: [['Dumbbell Bench Press', 3, 8], ['Barbell Row', 2, 8], ['Dumbbell Shoulder Press', 3, 10], ['Lat Pulldown', 2, 10], ['Lateral Raise', 2, 15], ['Triceps Pushdown', 2, 12], ['Dumbbell Curl', 2, 12]] },
+  { name: 'Lower', ex: [['Squat', 3, 8], ['Leg Extension', 3, 12], ['Romanian Deadlift', 3, 8], ['Hip Thrust', 4, 10], ['Back Extension', 2, 12], ['Hanging Leg Raise', 3, 12]] },
+];
