@@ -1,7 +1,7 @@
 'use strict';
 /* Bami Fitness - single-user workout planner/tracker. Data lives in localStorage on the device. */
 
-const APP_VERSION = '2.0.0'; // keep in sync via tools/bump_version.py
+const APP_VERSION = '2.1.0'; // keep in sync via tools/bump_version.py
 
 // ---------- helpers ----------
 const $ = (s, el = document) => el.querySelector(s);
@@ -37,7 +37,7 @@ const STRENGTH_MET = 5;
 // ---------- storage ----------
 const KEY = 'fitlog.v1'; // kept from v1 so existing data survives the rename
 const defaults = () => ({
-  settings: { weightKg: 70, heightCm: 170, age: 30, sex: 'male', weeklyGoal: 4, restSec: 90 },
+  settings: { weightKg: 70, heightCm: 170, age: 30, sex: 'male', goal: 'general', weeklyGoal: 4, restSec: 90 },
   plans: [], sessions: [], customEx: [],
 });
 /** Older plans stored `sets: 3, reps: 10` per exercise; plans now hold one row per set. */
@@ -118,10 +118,69 @@ function lastSets(name, excludeId) {
   return [];
 }
 
+// ---------- coaching (rules live in coach.js) ----------
+const goalKey = () => (GOALS[db.settings.goal] ? db.settings.goal : 'general');
+/** Exercises for a muscle: ones you already do first, then library order (compound lifts come first). */
+function suggestExercises(muscle, n, exclude) {
+  const used = new Map();
+  for (const s of doneSessions()) for (const e of s.exercises) used.set(e.name.toLowerCase(), (used.get(e.name.toLowerCase()) || 0) + 1);
+  return library().filter((x) => x.muscle === muscle && !exclude.some((y) => sameName(y, x.name)))
+    .map((x, i) => ({ x, i, n: used.get(x.name.toLowerCase()) || 0 }))
+    .sort((a, b) => b.n - a.n || a.i - b.i).slice(0, n).map((o) => o.x.name);
+}
+const coachCtx = () => ({ goalKey: goalKey(), info: exInfo, suggest: suggestExercises });
+const weekBounds = (dateStr) => { const m = mondayOf(parseYmd(dateStr)); return [ymd(m), ymd(addDays(m, 6))]; };
+const between = (list, a, b) => list.filter((s) => s.date >= a && s.date <= b);
+const FIND_MARK = { warn: '!', tip: '→', ok: '✓' };
+
+function findingsHTML(list, interactive) {
+  return list.map((f) => `<div class="find ${f.level}"><span class="fi">${FIND_MARK[f.level]}</span><div>${esc(f.text)}${
+    f.add?.length
+      ? (interactive
+        ? `<div class="adds">${f.add.map((n) => `<button class="addchip" data-act="addsug" data-n="${esc(n)}">+ ${esc(n)}</button>`).join('')}</div>`
+        : `<div class="try">Try: ${esc(f.add.join(', '))}</div>`)
+      : ''}</div></div>`).join('');
+}
+const COACH_NOTE = '<div class="hint">General guidance from common training rules - not medical advice or a personal programme.</div>';
+
+/** Per-session / per-muscle analysis of the session or plan being edited. */
+function draftAnalysis() {
+  const d = draft;
+  const finished = d.status === 'done';
+  const cleaned = (list) => list.map((e) => ({ ...e, sets: e.sets.map((x) => ({ ...x, done: finished ? true : x.done })) }));
+  if (sheetMode === 'plan') {
+    const pseudo = { id: d.id, date: today(), status: 'planned', type: 'plan', intensity: 'Moderate', exercises: d.exercises };
+    return assessSession({ session: pseudo, weekSessions: null, neighbors: [], restSec: db.settings.restSec, ...coachCtx() });
+  }
+  const date = d.date || today();
+  const [a, b] = weekBounds(date);
+  const others = db.sessions.filter((x) => x.id !== d.id);
+  const near = others.filter((x) => Math.abs(dayNum(x.date) - dayNum(date)) <= 3);
+  return assessSession({ session: { ...d, date, exercises: cleaned(d.exercises) }, weekSessions: between(others, a, b), neighbors: near, restSec: db.settings.restSec, ...coachCtx() });
+}
+function analysisHTML(a) {
+  const t = a.totals;
+  const tiles = t.sets ? `<div class="tiles three">
+    <div class="tile"><div class="v">${t.sets}</div><div class="l">Sets · ${t.exercises} exercises</div></div>
+    <div class="tile"><div class="v">${fmt(t.volume)}</div><div class="l">Volume (kg)</div></div>
+    <div class="tile"><div class="v">~${t.estMin}<small> min</small></div><div class="l">Est. duration</div></div></div>` : '';
+  const rows = a.rows.length ? `<div class="card mtable"><div class="hint" style="margin:0 0 8px">Sets per muscle in this ${sheetMode === 'plan' ? 'plan' : 'session'} (3-10 is the sweet spot)</div>${a.rows.map((r) => `
+    <div class="mrow"><span class="mn">${esc(r.muscle)}</span>
+      <span class="mbar"><i class="${r.status}" style="width:${Math.min(100, r.sets / 12 * 100)}%"></i></span>
+      <span class="mv">${r.sets}${r.week != null ? `<small> · week ${r.week}/${r.min}-${r.max}</small>` : ''}</span></div>`).join('')}</div>` : '';
+  const empty = !t.sets && sheetMode === 'plan' ? '<div class="empty" style="padding:14px">Add exercises to see the analysis.</div>' : '';
+  return `${tiles}${rows}<div class="finds">${findingsHTML(a.findings, true)}</div>${empty}${COACH_NOTE}`;
+}
+let anaTimer;
+function refreshAnalysis() {
+  clearTimeout(anaTimer);
+  anaTimer = setTimeout(() => { const el = $('#ana'); if (el && draft) el.innerHTML = analysisHTML(draftAnalysis()); }, 200);
+}
+
 // ---------- ui state ----------
 const ui = {
   view: 'home', sel: today(),
-  dashMode: 'week', progEx: '', progRange: '3M', progMetric: 'weight',
+  dashMode: 'week', revPeriod: 'week', revBasis: 'plan', progEx: '', progRange: '3M', progMetric: 'weight',
 };
 let draft = null;       // session or plan being edited in the sheet
 let sheetMode = null;   // 'session' | 'plan'
@@ -160,9 +219,19 @@ function homeView() {
     </div>
   </header>
   <div class="week">${days}</div>
+  ${weekCheckCard(weekKeys)}
   <h3>${heading}</h3>
   <div class="list">${list.length ? list.map(sessionCard).join('') : '<div class="empty">Nothing here yet.<br>Tap + to plan or log a session.</div>'}</div>
   <button class="fab" data-act="add" aria-label="Add session">+</button>`;
+}
+
+function weekCheckCard(weekKeys) {
+  const ss = between(db.sessions, weekKeys[0], weekKeys[6]);
+  if (!ss.length) return '';
+  const r = assessPeriod({ sessions: ss, weeks: 1, frac: 1, basis: 'plan', weeklyGoal: db.settings.weeklyGoal, age: db.settings.age, ...coachCtx() });
+  return `<div class="card weekcheck" data-act="openreview" role="button" tabindex="0">
+    <div class="wc-head"><h2>Week check</h2><span class="pill">${ss.length} sessions · ${r.totals.sets} sets</span></div>
+    <div class="finds">${findingsHTML(r.findings.slice(0, 2), false)}</div><div class="hint">Tap for the full review ›</div></div>`;
 }
 
 function sessionCard(s) {
@@ -280,6 +349,8 @@ function dashView() {
     <div class="tile"><div class="v">${streak}<small> wk</small></div><div class="l">Goal streak</div></div>
   </div>
 
+  ${reviewSection()}
+
   <h3>Body</h3>
   ${bodyCard()}
 
@@ -299,6 +370,47 @@ function dashView() {
   <h3>By activity · ${mode === 'week' ? 'last 8 weeks' : 'last 6 months'}</h3>
   <div class="card"><div class="bars">${rows.length ? rows.map(([k, v]) => `
     <div class="hbar"><span>${esc(k)}</span><span class="t"><i style="width:${v.kcal / maxK * 100}%"></i></span><span class="n">${fmt(v.kcal)} kcal</span></div>`).join('') : '<div class="empty" style="padding:10px">No completed sessions in this range.</div>'}</div></div>`;
+}
+
+/** Week/month review: what was done (actual) or what is scheduled (plan) against sensible weekly targets. */
+function reviewSection() {
+  const sel = parseYmd(ui.sel), basis = ui.revBasis, month = ui.revPeriod === 'month';
+  let a, b, weeks, label;
+  if (!month) { [a, b] = weekBounds(ui.sel); weeks = 1; const d = parseYmd(a); label = `Week of ${d.getDate()} ${MONTH[d.getMonth()]}`; }
+  else {
+    a = ymd(new Date(sel.getFullYear(), sel.getMonth(), 1)); b = ymd(new Date(sel.getFullYear(), sel.getMonth() + 1, 0));
+    weeks = parseYmd(b).getDate() / 7; label = `${MONTH[sel.getMonth()]} ${sel.getFullYear()}`;
+  }
+  const t = today();
+  const span = dayNum(b) - dayNum(a) + 1;
+  const frac = basis === 'actual' && t >= a && t <= b ? Math.max(1 / 7, (dayNum(t) - dayNum(a) + 1) / span) : 1;
+  const list = between(db.sessions, a, b).filter((s) => basis === 'plan' || s.status === 'done');
+  const head = `<h3 id="review">Training review · ${GOALS[goalKey()].label}</h3>
+  <div class="seg"><button class="${!month ? 'on' : ''}" data-act="revperiod" data-v="week">Week</button><button class="${month ? 'on' : ''}" data-act="revperiod" data-v="month">Month</button></div>
+  <div class="seg accent" style="margin-top:8px"><button class="${basis === 'actual' ? 'on' : ''}" data-act="revbasis" data-v="actual">Actual</button><button class="${basis === 'plan' ? 'on' : ''}" data-act="revbasis" data-v="plan">Plan</button></div>
+  <div class="hint">Actual = finished sessions only. Plan = finished + scheduled sessions.</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0"><button class="icon-btn" data-act="revshift" data-n="-1" aria-label="Previous">‹</button><b>${label}</b><button class="icon-btn" data-act="revshift" data-n="1" aria-label="Next">›</button></div>`;
+  if (basis === 'actual' && a > t) return `${head}<div class="card empty" style="padding:18px">Nothing is logged for a future period yet.<br>Switch to <b>Plan</b> to review what you have scheduled.</div>`;
+  if (!list.length) return `${head}<div class="card empty" style="padding:18px">No ${basis === 'plan' ? 'sessions' : 'finished sessions'} in this ${month ? 'month' : 'week'}.${basis === 'plan' ? '<br>Schedule some on the Schedule tab to get a plan review.' : ''}</div>`;
+
+  const r = assessPeriod({ sessions: list, weeks, frac, basis, weeklyGoal: db.settings.weeklyGoal, age: db.settings.age, ...coachCtx() });
+  const to = r.totals;
+  const bars = r.rows.map((x) => {
+    const scale = Math.max(x.max * 1.2, x.sets, 1);
+    return `<div class="mrow"><span class="mn">${esc(x.muscle)}</span>
+      <span class="mbar"><i class="${x.status}" style="width:${x.sets / scale * 100}%"></i><b style="left:${x.min / scale * 100}%"></b></span>
+      <span class="mv">${x.sets}<small> / ${x.min}-${x.max}</small></span></div>`;
+  }).join('');
+  const tips = basis === 'actual' ? overloadTips(db.sessions, exInfo) : [];
+  const hr = r.hrPct ? `<div class="hint">Average heart rate across these sessions: ${Math.round(r.hrPct * 100)}% of your estimated max (${Math.round(hrMaxFor(db.settings.age))} bpm).</div>` : '';
+  return `${head}
+  <div class="tiles three">
+    <div class="tile"><div class="v">${to.sessions}</div><div class="l">Sessions</div></div>
+    <div class="tile"><div class="v">${to.sets}</div><div class="l">Lifting sets</div></div>
+    <div class="tile"><div class="v">${to.minutes}<small> / ${to.targetMin}</small></div><div class="l">Minutes</div></div>
+  </div>
+  <div class="card mtable" style="margin-top:10px"><div class="hint" style="margin:0 0 8px">Sets per muscle vs target range${frac < 1 ? ' (this period is still in progress)' : ''}</div>${bars}</div>
+  <div class="finds">${findingsHTML(r.findings, false)}${findingsHTML(tips, false)}</div>${hr}${COACH_NOTE}`;
 }
 
 function barChart(items) {
@@ -413,7 +525,9 @@ function settingsView() {
   <div class="hint">Resting metabolism (BMR): <b>${fmt(bmr())} kcal/day</b>. Used to estimate calories burned in each session.</div>
   <h3>Training</h3>
   <div class="card">
-    <div class="row2" style="margin-top:0">
+    <label>Main goal<select data-set="goal">${Object.entries(GOALS).map(([k, g]) => `<option value="${k}"${k === goalKey() ? ' selected' : ''}>${g.label}</option>`).join('')}</select></label>
+    <div class="hint">Sets the weekly targets used by the analysis (sets per muscle, training minutes).</div>
+    <div class="row2">
       <label>Weekly workout goal<input inputmode="numeric" data-set="weeklyGoal" value="${s.weeklyGoal}"></label>
       <label>Rest timer (sec)<input inputmode="numeric" data-set="restSec" value="${s.restSec}"></label>
     </div>
@@ -515,6 +629,8 @@ function sessionEditorHTML() {
     <button class="${d.status === 'planned' ? 'on' : ''}" data-act="status" data-v="planned">Planned</button>
     <button class="${d.status === 'done' ? 'on' : ''}" data-act="status" data-v="done">Done</button></div>
   ${exercises}
+  <h3>Analysis</h3>
+  <div id="ana">${analysisHTML(draftAnalysis())}</div>
   <h3>Session stats</h3>
   <div class="row3" style="margin-top:0">
     <label>Minutes<input inputmode="numeric" data-f="durationMin" value="${d.durationMin}"></label>
@@ -567,6 +683,8 @@ function planEditorHTML() {
   <label>Plan name<input data-f="name" value="${esc(p.name)}" placeholder="e.g. Push Day"></label>
   ${p.exercises.map((e, i) => exerciseBlock(e, i, 'plan')).join('')}
   <button class="addex" data-act="addex">+ Add exercises</button>
+  <h3>Analysis</h3>
+  <div id="ana">${analysisHTML(draftAnalysis())}</div>
   ${isNew ? '' : '<button class="danger" data-act="plan-delete">Delete plan</button>'}`;
 }
 
@@ -716,7 +834,22 @@ document.addEventListener('click', (e) => {
       }
       return renderSheet();
     }
+    case 'addsug': {
+      const name = el.dataset.n;
+      if (!draft.exercises.some((x) => sameName(x.name, name))) {
+        draft.exercises.push({ name, sets: sheetMode === 'plan' ? Array.from({ length: 3 }, () => ({ reps: 10, weight: '' })) : blankSets(name, draft.id) });
+      }
+      return renderSheet();
+    }
     case 'rest': return startRest(db.settings.restSec);
+    case 'openreview': ui.view = 'dash'; ui.revPeriod = 'week'; ui.revBasis = 'plan'; render(); window.scrollTo(0, 0); return $('#review')?.scrollIntoView();
+    case 'revperiod': ui.revPeriod = v; return render();
+    case 'revbasis': ui.revBasis = v; return render();
+    case 'revshift': {
+      const cur = parseYmd(ui.sel), n = Number(el.dataset.n);
+      ui.sel = ymd(ui.revPeriod === 'month' ? new Date(cur.getFullYear(), cur.getMonth() + n, 1) : addDays(cur, 7 * n));
+      return render();
+    }
     case 'rest-add': restEnd += 15000; return;
     case 'rest-stop': return stopRest();
     // dashboard / progress
@@ -735,7 +868,7 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.session[role=button]')) { e.preventDefault(); e.target.click(); }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role=button]')) { e.preventDefault(); e.target.click(); }
 });
 
 // text inputs update the draft without re-rendering (keeps focus and keyboard open)
@@ -743,8 +876,9 @@ document.addEventListener('input', (e) => {
   const t = e.target;
   if (t.closest('#view') || !draft || !t.dataset.f) return;
   const f = t.dataset.f;
-  if (t.dataset.ex !== undefined && t.dataset.set !== undefined) { draft.exercises[t.dataset.ex].sets[t.dataset.set][f] = t.value; return; }
+  if (t.dataset.ex !== undefined && t.dataset.set !== undefined) { draft.exercises[t.dataset.ex].sets[t.dataset.set][f] = t.value; return refreshAnalysis(); }
   draft[f] = t.value;
+  if (f === 'date') refreshAnalysis();
   if (sheetMode !== 'session') return;
   if (f === 'kcal') draft.kcalManual = true;
   if (f === 'durationMin') syncKcal();
@@ -755,8 +889,9 @@ document.addEventListener('change', (e) => {
   if (t.dataset.act === 'progex') { ui.progEx = t.value; return render(); }
   if (t.dataset.set !== undefined && t.closest('#view')) {
     const key = t.dataset.set;
-    const v = key === 'sex' ? t.value : Number(t.value);
-    if (key !== 'sex' && !(v > 0)) { toast('Enter a positive number'); return render(); }
+    const text = key === 'sex' || key === 'goal';
+    const v = text ? t.value : Number(t.value);
+    if (!text && !(v > 0)) { toast('Enter a positive number'); return render(); }
     db.settings[key] = v; save(); render(); return toast('Saved');
   }
   if (t.id === 'importFile') return importData(t.files[0]);
@@ -771,7 +906,8 @@ document.addEventListener('change', (e) => {
     }
     return renderSheet();
   }
-  if (f === 'sport' || f === 'intensity') { draft[f] = t.value; syncKcal(); }
+  if (f === 'sport' || f === 'intensity') { draft[f] = t.value; syncKcal(); refreshAnalysis(); }
+  if (f === 'date') refreshAnalysis();
 });
 
 function syncKcal() {

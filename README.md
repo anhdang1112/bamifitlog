@@ -20,3 +20,9 @@ After changing any file, bump `CACHE` in `sw.js` (e.g. `bamifitness-v3`) so inst
 ```
 python tools/make_icons.py
 ```
+
+## Tests
+The training-analysis rules in `coach.js` are pure functions with unit tests:
+```
+node tests/coach.test.js
+```
