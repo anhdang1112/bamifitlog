@@ -224,3 +224,32 @@ input[type=date], input[type=time] { min-height: 44px; }
 .mbar b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #ffffffaa; }
 .weekcheck { margin-top: 12px; cursor: pointer; border-left: 4px solid var(--accent); }
 .wc-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+
+/* calendar */
+.cal-head, .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.cal-head span { text-align: center; font-family: var(--display); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding-bottom: 5px; }
+.cell { position: relative; min-height: 64px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 5px 3px 4px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.cell .cn { font-family: var(--display); font-weight: 800; font-size: 15px; color: var(--text); line-height: 1; }
+.cell.out { opacity: .38; }
+.cell.today .cn { color: var(--accent); }
+.cell.today { border-color: #c8ff2e66; }
+.cell.sel { border-color: var(--accent); background: #c8ff2e14; box-shadow: 0 0 16px #c8ff2e40; }
+.cicos { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; }
+.cico { --c: #8d8d9a; width: 21px; height: 21px; border-radius: 6px; border: 1.5px solid var(--c); color: var(--c); display: inline-grid; place-items: center; flex: none; vertical-align: middle; }
+.cico.done { background: var(--c); color: #0a0a0c; }
+.cico.plan { background: transparent; border-style: dashed; }
+.cico svg, .lg svg, .qchip svg, .session .ico svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.cell .more { font-size: 10px; color: var(--muted); font-weight: 700; align-self: center; }
+.legend2 { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.lg { display: inline-flex; align-items: center; gap: 4px; color: var(--c); font-weight: 700; }
+.lg svg { width: 15px; height: 15px; }
+.lg2 { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
+.lg2 .cico { width: 13px; height: 13px; border-radius: 4px; }
+.qchip { --c: #8d8d9a; display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px 9px 9px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); font-weight: 700; white-space: nowrap; }
+.qchip i { width: 26px; height: 26px; border-radius: 7px; background: var(--c); color: #0a0a0c; display: grid; place-items: center; }
+.qchip svg { width: 16px; height: 16px; }
+.session .ico { color: var(--c, var(--text)); border: 1.5px solid var(--c, var(--line)); }
+.hname { display: flex; align-items: center; gap: 9px; }
+.hname .cico { width: 26px; height: 26px; }
+.hname svg { width: 16px; height: 16px; }
+.session .ico svg { width: 22px; height: 22px; }
